@@ -1,7 +1,6 @@
-import tls from 'tls'
+import https from 'https'
 // @ts-ignore d.ts没有跟进
 import { promises as dnsPromises } from 'dns'
-
 import Plugin, { tools } from '../../plugin'
 
 class BiliveCaptcha extends Plugin {
@@ -43,42 +42,50 @@ class BiliveCaptcha extends Plugin {
     const image = captchaJPEG.split(',')[1]
     const imageBase64 = `{"image":"${image}"}`
     // 规避域名备案
-    const ip = await dnsPromises.lookup('bilive.halaal.win').catch(() => undefined)
+    const host = 'bilive.halaal.win'
+    const ip = await dnsPromises.lookup(host).catch(() => undefined)
     if (ip === undefined) return ''
     return new Promise<string>(resolve => {
-      const c = tls.connect({
-        host: ip.address,
+      const req = https.request({
+        method: 'POST',
+        host,
         port: 443,
+        path: '/captcha/v1',
         rejectUnauthorized: false,
-        timeout: 10
-      })
-      c.setEncoding('utf8')
-      c.on('error', () => {
-        tools.Log('哔哩打码', '网络错误')
-        resolve('')
-      })
-      c.on('data', async (data: string) => {
-        const codeReg = data.match(/HTTP\/[\d\.]* (?<statusCode>\d*) /)
-        const bodyReg = data.match(/(?<bodyStr>{.*})/)
-        if (codeReg !== null && bodyReg !== null) {
-          const { statusCode } = <{ statusCode: string }>codeReg.groups
-          if (statusCode === '200') {
-            const { bodyStr } = <{ bodyStr: string }>bodyReg.groups
-            const body = await tools.JSONparse<biliveCaptchaResult>(bodyStr)
-            if (body !== undefined && body.code === 0 && body.success) resolve(body.message)
-            else tools.Log('哔哩打码', bodyStr)
-          }
-          else tools.Log('哔哩打码', statusCode)
+        setHost: false,
+        servername: ip.address,
+        timeout: 10,
+        headers: {
+          host,
+          'content-type': 'application/json',
+          'content-length': imageBase64.length,
+          'connection': 'close',
         }
-        else tools.Log('哔哩打码', data)
+      }, res => {
+        res.on('error', err => {
+          tools.Log('哔哩打码', '网络错误', err)
+          resolve('')
+        })
+        if (res.statusCode !== 200) {
+          tools.Log('哔哩打码', res.statusCode)
+          return resolve('')
+        }
+        res.setEncoding('utf8')
+        res.on('data', async data => {
+          const body = await tools.JSONparse<biliveCaptchaResult>(data)
+          if (body !== undefined && body.code === 0 && body.success) resolve(body.message)
+          else {
+            tools.Log('哔哩打码', data)
+            resolve('')
+          }
+        })
+      })
+      req.on('error', err => {
+        tools.Log('哔哩打码', '网络错误', err)
         resolve('')
       })
-      c.write(`POST /captcha/v1 HTTP/1.1\r\n\
-host: bilive.halaal.win\r\n\
-content-type: application/json\r\n\
-content-length: ${imageBase64.length}\r\n\
-connection: close\r\n\r\n\
-${imageBase64}\r\n\r\n`, err => { if (err !== undefined) resolve('') })
+      req.write(imageBase64)
+      req.end()
     })
   }
 }

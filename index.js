@@ -10,7 +10,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const tls_1 = __importDefault(require("tls"));
+const https_1 = __importDefault(require("https"));
 const dns_1 = require("dns");
 const plugin_1 = __importStar(require("../../plugin"));
 class BiliveCaptcha extends plugin_1.default {
@@ -22,7 +22,7 @@ class BiliveCaptcha extends plugin_1.default {
         this.author = 'lzghzr';
     }
     async load({ defaultOptions, whiteList }) {
-        defaultOptions.config['biliveCaptcha'] = [];
+        defaultOptions.config['biliveCaptcha'] = false;
         defaultOptions.info['biliveCaptcha'] = {
             description: '哔哩打码',
             tip: '是否使用哔哩打码',
@@ -41,48 +41,52 @@ class BiliveCaptcha extends plugin_1.default {
             return '';
         const image = captchaJPEG.split(',')[1];
         const imageBase64 = `{"image":"${image}"}`;
-        const ip = await dns_1.promises.lookup('bilive.halaal.win').catch(() => undefined);
+        const host = 'bilive.halaal.win';
+        const ip = await dns_1.promises.lookup(host).catch(() => undefined);
         if (ip === undefined)
             return '';
         return new Promise(resolve => {
-            const c = tls_1.default.connect({
-                host: ip.address,
+            const req = https_1.default.request({
+                method: 'POST',
+                host,
                 port: 443,
+                path: '/captcha/v1',
                 rejectUnauthorized: false,
-                timeout: 10
-            });
-            c.setEncoding('utf8');
-            c.on('error', () => {
-                plugin_1.tools.Log('哔哩打码', '网络错误');
-                resolve('');
-            });
-            c.on('data', async (data) => {
-                const codeReg = data.match(/HTTP\/[\d\.]* (?<statusCode>\d*) /);
-                const bodyReg = data.match(/(?<bodyStr>{.*})/);
-                if (codeReg !== null && bodyReg !== null) {
-                    const { statusCode } = codeReg.groups;
-                    if (statusCode === '200') {
-                        const { bodyStr } = codeReg.groups;
-                        const body = await plugin_1.tools.JSONparse(bodyStr);
-                        if (body !== undefined && body.code === 0 && body.success)
-                            resolve(body.message);
-                        else
-                            plugin_1.tools.Log('哔哩打码', bodyStr);
-                    }
-                    else
-                        plugin_1.tools.Log('哔哩打码', statusCode);
+                setHost: false,
+                servername: ip.address,
+                timeout: 10,
+                headers: {
+                    host,
+                    'content-type': 'application/json',
+                    'content-length': imageBase64.length,
+                    'connection': 'close',
                 }
-                else
-                    plugin_1.tools.Log('哔哩打码', data);
+            }, res => {
+                res.on('error', err => {
+                    plugin_1.tools.Log('哔哩打码', '网络错误', err);
+                    resolve('');
+                });
+                if (res.statusCode !== 200) {
+                    plugin_1.tools.Log('哔哩打码', res.statusCode);
+                    return resolve('');
+                }
+                res.setEncoding('utf8');
+                res.on('data', async (data) => {
+                    const body = await plugin_1.tools.JSONparse(data);
+                    if (body !== undefined && body.code === 0 && body.success)
+                        resolve(body.message);
+                    else {
+                        plugin_1.tools.Log('哔哩打码', data);
+                        resolve('');
+                    }
+                });
+            });
+            req.on('error', err => {
+                plugin_1.tools.Log('哔哩打码', '网络错误', err);
                 resolve('');
             });
-            c.write(`POST /captcha/v1 HTTP/1.1\r\n\
-host: bilive.halaal.win\r\n\
-content-type: application/json\r\n\
-content-length: ${imageBase64.length}\r\n\
-connection: close\r\n\r\n\
-${imageBase64}\r\n\r\n`, err => { if (err !== undefined)
-                resolve(''); });
+            req.write(imageBase64);
+            req.end();
         });
     }
 }
