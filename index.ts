@@ -52,7 +52,7 @@ class BiliveCaptcha extends Plugin {
       const body = ruokuaiResponse.body
       if (body.code === 0 && body.success) return body.message
       else {
-        tools.Log('哔哩打码', body.message)
+        tools.Log('哔哩打码', body)
         return ''
       }
     }

@@ -48,7 +48,7 @@ class BiliveCaptcha extends plugin_1.default {
             if (body.code === 0 && body.success)
                 return body.message;
             else {
-                plugin_1.tools.Log('哔哩打码', body.message);
+                plugin_1.tools.Log('哔哩打码', body);
                 return '';
             }
         }
