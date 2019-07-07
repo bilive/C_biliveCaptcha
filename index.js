@@ -1,7 +1,4 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 var __importStar = (this && this.__importStar) || function (mod) {
     if (mod && mod.__esModule) return mod;
     var result = {};
@@ -10,8 +7,6 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const https_1 = __importDefault(require("https"));
-const dns_1 = require("dns");
 const plugin_1 = __importStar(require("../../plugin"));
 class BiliveCaptcha extends plugin_1.default {
     constructor() {
@@ -40,54 +35,27 @@ class BiliveCaptcha extends plugin_1.default {
         if (!useCaptcha)
             return '';
         const image = captchaJPEG.split(',')[1];
-        const imageBase64 = `{"image":"${image}"}`;
-        const host = 'bilive.halaal.win';
-        const ip = await dns_1.promises.lookup(host).catch(() => undefined);
-        if (ip === undefined)
+        const send = {
+            method: 'POST',
+            uri: 'https://bilive.halaal.win/captcha/v1',
+            servername: '',
+            json: true,
+            body: { image }
+        };
+        const ruokuaiResponse = await plugin_1.tools.XHR(send);
+        if (ruokuaiResponse !== undefined && ruokuaiResponse.response.statusCode === 200) {
+            const body = ruokuaiResponse.body;
+            if (body.code === 0 && body.success)
+                return body.message;
+            else {
+                plugin_1.tools.Log('哔哩打码', body.message);
+                return '';
+            }
+        }
+        else {
+            plugin_1.tools.Log('哔哩打码', '网络错误');
             return '';
-        return new Promise(resolve => {
-            const req = https_1.default.request({
-                method: 'POST',
-                host,
-                port: 443,
-                path: '/captcha/v1',
-                rejectUnauthorized: false,
-                setHost: false,
-                servername: ip.address,
-                timeout: 10,
-                headers: {
-                    host,
-                    'content-type': 'application/json',
-                    'content-length': imageBase64.length,
-                    'connection': 'close',
-                }
-            }, res => {
-                res.on('error', err => {
-                    plugin_1.tools.Log('哔哩打码', '网络错误', err);
-                    resolve('');
-                });
-                if (res.statusCode !== 200) {
-                    plugin_1.tools.Log('哔哩打码', res.statusCode);
-                    return resolve('');
-                }
-                res.setEncoding('utf8');
-                res.on('data', async (data) => {
-                    const body = await plugin_1.tools.JSONparse(data);
-                    if (body !== undefined && body.code === 0 && body.success)
-                        resolve(body.message);
-                    else {
-                        plugin_1.tools.Log('哔哩打码', data);
-                        resolve('');
-                    }
-                });
-            });
-            req.on('error', err => {
-                plugin_1.tools.Log('哔哩打码', '网络错误', err);
-                resolve('');
-            });
-            req.write(imageBase64);
-            req.end();
-        });
+        }
     }
 }
 exports.default = new BiliveCaptcha();

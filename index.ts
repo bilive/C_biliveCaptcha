@@ -1,6 +1,4 @@
-import https from 'https'
-// @ts-ignore d.ts没有跟进
-import { promises as dnsPromises } from 'dns'
+import { Options as requestOptions } from 'request'
 import Plugin, { tools } from '../../plugin'
 
 class BiliveCaptcha extends Plugin {
@@ -40,53 +38,28 @@ class BiliveCaptcha extends Plugin {
     const useCaptcha = <boolean>this._.config['biliveCaptcha']
     if (!useCaptcha) return ''
     const image = captchaJPEG.split(',')[1]
-    const imageBase64 = `{"image":"${image}"}`
-    // 规避域名备案
-    const host = 'bilive.halaal.win'
-    const ip = await dnsPromises.lookup(host).catch(() => undefined)
-    if (ip === undefined) return ''
-    return new Promise<string>(resolve => {
-      const req = https.request({
-        method: 'POST',
-        host,
-        port: 443,
-        path: '/captcha/v1',
-        rejectUnauthorized: false,
-        setHost: false,
-        servername: ip.address,
-        timeout: 10,
-        headers: {
-          host,
-          'content-type': 'application/json',
-          'content-length': imageBase64.length,
-          'connection': 'close',
-        }
-      }, res => {
-        res.on('error', err => {
-          tools.Log('哔哩打码', '网络错误', err)
-          resolve('')
-        })
-        if (res.statusCode !== 200) {
-          tools.Log('哔哩打码', res.statusCode)
-          return resolve('')
-        }
-        res.setEncoding('utf8')
-        res.on('data', async data => {
-          const body = await tools.JSONparse<biliveCaptchaResult>(data)
-          if (body !== undefined && body.code === 0 && body.success) resolve(body.message)
-          else {
-            tools.Log('哔哩打码', data)
-            resolve('')
-          }
-        })
-      })
-      req.on('error', err => {
-        tools.Log('哔哩打码', '网络错误', err)
-        resolve('')
-      })
-      req.write(imageBase64)
-      req.end()
-    })
+    const send: requestOptions = {
+      method: 'POST',
+      uri: 'https://bilive.halaal.win/captcha/v1',
+      // @ts-ignore d.ts 未更新
+      servername: '',
+      json: true,
+      body: { image }
+    }
+    // @ts-ignore d.ts 未更新
+    const ruokuaiResponse = await tools.XHR<biliveCaptchaResult>(send)
+    if (ruokuaiResponse !== undefined && ruokuaiResponse.response.statusCode === 200) {
+      const body = ruokuaiResponse.body
+      if (body.code === 0 && body.success) return body.message
+      else {
+        tools.Log('哔哩打码', body.message)
+        return ''
+      }
+    }
+    else {
+      tools.Log('哔哩打码', '网络错误')
+      return ''
+    }
   }
 }
 
