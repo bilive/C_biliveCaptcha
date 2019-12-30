@@ -37,7 +37,7 @@ class BiliveCaptcha extends plugin_1.default {
         const image = captchaJPEG.split(',')[1];
         const send = {
             method: 'POST',
-            uri: 'https://bilive.halaal.win/captcha/v1',
+            uri: 'http://orc.233.re:2333',
             servername: '',
             json: true,
             body: { image }
